@@ -15,3 +15,10 @@ An MQTT bridge is currently implemented in the project. This is interchangeable 
 The final result should look like this:
 
 ![final result](/doc/final.jpg)
+
+
+# Switching from MQTT to a Web Interface
+
+To use a web-based interface for fan control instead of the MQTT bridge, you can replace the MQTT->Poll(); line in the loop() function with WebUI->loop();. This allows switching from MQTT to a webpage for controlling the fan system.
+
+Note: It is not possible to enable both MQTT and the web interface simultaneously. Doing so would require adjustments to the control logic within the SEController class to handle multiple communication modes at the same time.

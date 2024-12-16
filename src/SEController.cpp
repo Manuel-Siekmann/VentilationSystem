@@ -1,198 +1,266 @@
 /*
-  This file is part of the VentilationSystem project.
+  This file is part of the SEVentilation to MQTT project.
   Copyright (C) 2023 Dr. Manuel Siekmann. All rights reserved.
 */
 
 #include "SEController.h"
 #include "XModemCRC.h"
 #include "Logging.h"
+#include <string.h>
 
-#define STX 0x02
-#define ETX 0x0A
-#define ACK 0x06
-#define TAB 0x09
+const int SEController::FAN_LEVEL_REGISTERS[SEController::FAN_LEVEL_COUNT] = {
+    173, 174, 175, 176, 177, 178
+};
 
-#define RESET_ACK_MILLIS 8000
-
-#define PROCESS_REQUESTREGISTER_DELAY_MILLIS 50
-#define PROCESS_SENDBUFFER_DELAY_MILLIS 20
-#define SEND_ACK_DELAY_MILLIS 2
-
-#define COMMANDID_SET 32
-#define COMMANDID_GET 32800
-
-#define SECONTROLLER_BAUD 28800
-
-#define AREA_LEVEL_START 173
-#define AREA_LEVEL_END 178
-
-#define REGISTER_MAX 256
-
-#define EMPTY_STRING ""
+const int SEController::LABEL_REGISTERS[SEController::LABEL_COUNT] = {
+    78, 79, 80, 81, 82, 83
+};
 
 bool SEController::IsSendBufferEmpty()
 {
-  return SendMessageBuffer.length() == 0;
+    return SendMessageBuffer[0] == '\0';
 }
 
 void SEController::SendMessageRequest(int commandId, int registerId)
 {
-  if (IsSendBufferEmpty() == false) Log("SendMessageRequest but message buffer != null");
-  String message = char(STX) + String(commandId) + char(TAB) + String(registerId) + char(TAB);
-  SendMessageBuffer = message + GetXModemCRC(message) + char(ETX);
+    if (!IsSendBufferEmpty()) Log("SendMessageRequest but message buffer != null");
+
+    int len = snprintf(SendMessageBuffer, sizeof(SendMessageBuffer), "%c%d%c%d%c", STX, commandId, TAB, registerId, TAB);
+
+    unsigned short crc = GetXModemCRC(SendMessageBuffer, len);
+    len += snprintf(SendMessageBuffer + len, sizeof(SendMessageBuffer) - len, "%u%c", crc, ETX);
 }
 
-void SEController::SendMessageResponse(int registerId, String content)
+void SEController::SendMessageResponse(int registerId, const char* content)
 {
-  if (IsSendBufferEmpty() == false) Log("SendMessageResponse but message buffer != null");
-  String message = char(STX) + String(COMMANDID_SET) + char(TAB) + String(registerId) + char(TAB) + content + char(TAB);
-  SendMessageBuffer = message + GetXModemCRC(message) + char(ETX);
+    if (!IsSendBufferEmpty()) Log("SendMessageResponse but message buffer != null");
+
+    int len = snprintf(SendMessageBuffer, sizeof(SendMessageBuffer), "%c%d%c%d%c%s%c", STX, COMMANDID_SET, TAB, registerId, TAB, content, TAB);
+
+    unsigned short crc = GetXModemCRC(SendMessageBuffer, len);
+    len += snprintf(SendMessageBuffer + len, sizeof(SendMessageBuffer) - len, "%u%c", crc, ETX);
 }
 
-void SEController::ProcessMessageResponseIncome(int commandId, int registerId, String content)
+int SEController::getFanLevelRegisterIndex(int registerId)
 {
-  if (Register[registerId] != content)
-  {
-    Log("ProcessMessageResponseIncome: register changed");
-    Register[registerId] = content;
-    if (AREA_LEVEL_START <= registerId && registerId <= AREA_LEVEL_END)
+    for (int i = 0; i < FAN_LEVEL_COUNT; i++)
     {
-      for (unsigned int index = 0; index < OnRegisterChangedCount; index++)
-      {
-        OnRegisterChanged[index](this, registerId, content);
-      }
+        if (FAN_LEVEL_REGISTERS[i] == registerId)
+        {
+            return i;
+        }
     }
-  }
+    return -1;
+}
+
+int SEController::getLabelRegisterIndex(int registerId)
+{
+    for (int i = 0; i < LABEL_COUNT; i++)
+    {
+        if (LABEL_REGISTERS[i] == registerId)
+        {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void SEController::ProcessMessageResponseIncome(int commandId, int registerId, const char* content)
+{
+    int index = getFanLevelRegisterIndex(registerId);
+    if (index >= 0)
+    {
+        if (strcmp(FanLevelValues[index], content) != 0)
+        {
+            Log("Fan value register " + String(registerId) + " changed to " + String(content));
+            strncpy(FanLevelValues[index], content, sizeof(FanLevelValues[index]) - 1);
+            FanLevelValues[index][sizeof(FanLevelValues[index]) - 1] = '\0';
+            for (unsigned int i = 0; i < OnRegisterChangedCount; i++)
+            {
+                OnRegisterChanged[i](this, registerId, content);
+            }
+        }
+        return;
+    }
+
+    index = getLabelRegisterIndex(registerId);
+    if (index >= 0)
+    {
+        if (strcmp(LabelValues[index], content) != 0)
+        {
+            Log("Fan value register " + String(registerId) + " changed to " + String(content));
+            strncpy(LabelValues[index], content, sizeof(LabelValues[index]) - 1);
+            LabelValues[index][sizeof(LabelValues[index]) - 1] = '\0';
+            for (unsigned int i = 0; i < OnRegisterChangedCount; i++)
+            {
+                OnRegisterChanged[i](this, registerId, content);
+            }
+        }
+    }
 }
 
 void SEController::ProcessSendMessageAck()
 {
-  if (SendMessageAck && millis() - PreviousSerialAvailable > SEND_ACK_DELAY_MILLIS)
-  {
-    SendMessageAck = false;
-    SECSerial->print(char(STX));
-    SECSerial->print(char(ACK));
-    SECSerial->print(char(ETX));
-  }
-}
-
-void SEController::ProcessMessage(String message)
-{
-  unsigned int MAX_PARTS = 5;
-  const char delimiter = TAB;
-  unsigned int numPart = 0;
-  String parts[MAX_PARTS];
-  unsigned int startIndex = 0;
-  if (message == String(char(ACK)))
-  {
-    LastMessageAccepted = true;
-    PreviousMillisAckReceived = millis();
-  }
-  else
-  {
-    SendMessageAck = true;
-    for (uint i = 0; i < message.length(); i++)
+    if (SendMessageAck && millis() - PreviousSerialAvailable > SEND_ACK_DELAY_MILLIS)
     {
-      if (message.charAt(i) == delimiter)
-      {
-        parts[numPart] = message.substring(startIndex, i);
-        numPart++;
-        startIndex = i + 1;
-      }
-      if (numPart == MAX_PARTS - 1)
-        break;
+        SendMessageAck = false;
+        SECSerial->write(STX);
+        SECSerial->write(ACK);
+        SECSerial->write(ETX);
     }
-    parts[numPart] = message.substring(startIndex);
-    numPart++;
-  }
-  if (numPart == 4)
-  {
-    ProcessMessageResponseIncome(parts[0].toInt(), parts[1].toInt(), parts[2]);
-  }
 }
 
-void SEController::ProcessRequestNextRegister()
+void SEController::ProcessMessage(const char* message)
 {
-  if (LastMessageAccepted && IsSendBufferEmpty())
-  {
-    SendMessageRequest(COMMANDID_GET, RegisterIndex);
-    RegisterIndex++;
-    PreviousMillisProcessRegister = millis();
-    if (RegisterIndex > AREA_LEVEL_END)
-      RegisterIndex = AREA_LEVEL_START;
-  }
+    if (message[0] == ACK && message[1] == '\0')
+    {
+        LastMessageAccepted = true;
+        PreviousMillisAckReceived = millis();
+    }
+    else
+    {
+        SendMessageAck = true;
+        int commandId = 0, registerId = 0;
+        char content[32] = {0};
+
+        int numScanned = sscanf(message, "%d\t%d\t%31s", &commandId, &registerId, content);
+
+        if (numScanned == 3)
+        {
+            ProcessMessageResponseIncome(commandId, registerId, content);
+        }
+        else
+        {
+            Log("ProcessMessage: sscanf failed");
+        }
+    }
+}
+
+void SEController::ProcessFanLevelRegisters()
+{
+    if (LastMessageAccepted && IsSendBufferEmpty())
+    {
+        int registerId = FAN_LEVEL_REGISTERS[FanLevelRegisterIndex];
+        SendMessageRequest(COMMANDID_GET, registerId);
+        FanLevelRegisterIndex = (FanLevelRegisterIndex + 1) % FAN_LEVEL_COUNT;
+        PreviousMillisProcessFanLevels = millis();
+    }
+}
+
+void SEController::ProcessLabelRegisters()
+{
+    if (LastMessageAccepted && IsSendBufferEmpty())
+    {
+        int registerId = LABEL_REGISTERS[LabelRegisterIndex];
+        SendMessageRequest(COMMANDID_GET, registerId);
+        LabelRegisterIndex++;
+
+        if (LabelRegisterIndex >= LABEL_COUNT)
+        {
+            LabelRegisterIndex = 0;
+            PreviousMillisProcessLabels = millis();
+        }
+    }
 }
 
 void SEController::ProcessMessageSendBuffer()
 {
-  if (SendMessageAck == false && SendMessageBuffer.length() > 0)
-  {
-    SECSerial->print(SendMessageBuffer);
-    SendMessageBuffer = EMPTY_STRING;
-    LastMessageAccepted = false;
-  }
+    if (!SendMessageAck && !IsSendBufferEmpty())
+    {
+        SECSerial->write((uint8_t*)SendMessageBuffer, strlen(SendMessageBuffer));
+        SendMessageBuffer[0] = '\0';
+        LastMessageAccepted = false;
+    }
 }
 
 SEController::SEController(uint8_t rxPin, uint8_t txPin)
 {
-  SECSerial = new SoftwareSerial(rxPin, txPin);
-  SECSerial->begin(SECONTROLLER_BAUD);
+    SECSerial = new SoftwareSerial(rxPin, txPin);
+    SECSerial->begin(SECONTROLLER_BAUD);
+    SendMessageBuffer[0] = '\0';
+    ReceiveMessageBuffer[0] = '\0';
+
+    memset(FanLevelValues, 0, sizeof(FanLevelValues));
+    memset(LabelValues, 0, sizeof(LabelValues));
+
+    FanLevelRegisterIndex = 0;
+    LabelRegisterIndex = 0;
+    LastMessageAccepted = true;
+    PreviousMillisProcessFanLevels = millis();
+    PreviousMillisProcessLabels = millis() - LABEL_UPDATE_INTERVAL;
 }
 
 SEController::~SEController()
 {
-  delete SECSerial;
-  SECSerial = NULL;
+    delete SECSerial;
+    SECSerial = NULL;
 }
 
 void SEController::AddOnRegisterChanged(RegisterChangedCallback callback)
 {
-  OnRegisterChanged[OnRegisterChangedCount] = callback;
-  OnRegisterChangedCount++;
+    if (OnRegisterChangedCount < ON_REGISTERCHANGED_MAX)
+    {
+        OnRegisterChanged[OnRegisterChangedCount] = callback;
+        OnRegisterChangedCount++;
+    }
 }
 
 void SEController::Poll()
 {
-  char incomingByte;
-  if (SECSerial->available())
-  {
-    PreviousSerialAvailable = millis();
-    incomingByte = SECSerial->read();
-    if (incomingByte == STX)
+    if (SECSerial->available())
     {
-      InsideMessageFlag = true;
-      ReceivedSTXFlag = true;
-    }
-    else if (incomingByte == ETX && InsideMessageFlag && ReceivedSTXFlag)
-    {
-      InsideMessageFlag = false;
-      ReceivedSTXFlag = false;
-      ProcessMessage(ReceiveMessageBuffer);
+        PreviousSerialAvailable = millis();
+        char incomingByte = SECSerial->read();
 
-      ReceiveMessageBuffer = EMPTY_STRING;
+        if (incomingByte == STX)
+        {
+            InsideMessageFlag = true;
+            ReceivedSTXFlag = true;
+            ReceiveMessageBuffer[0] = '\0';
+        }
+        else if (incomingByte == ETX && InsideMessageFlag && ReceivedSTXFlag)
+        {
+            InsideMessageFlag = false;
+            ReceivedSTXFlag = false;
+            ProcessMessage(ReceiveMessageBuffer);
+        }
+        else if (InsideMessageFlag)
+        {
+            size_t len = strlen(ReceiveMessageBuffer);
+            if (len < sizeof(ReceiveMessageBuffer) - 1)
+            {
+                ReceiveMessageBuffer[len] = incomingByte;
+                ReceiveMessageBuffer[len + 1] = '\0';
+            }
+        }
     }
-    else if (InsideMessageFlag)
-    {
-      ReceiveMessageBuffer += incomingByte;
-    }
-  }
-  if (millis() - PreviousMillisProcessRegister > PROCESS_REQUESTREGISTER_DELAY_MILLIS)
-  {
-    ProcessRequestNextRegister();
-  }
 
-  if (millis() - PreviousMillisAckReceived > RESET_ACK_MILLIS)
-  {
-    PreviousMillisAckReceived = millis();
-    LastMessageAccepted = true;
-  }
+    unsigned long currentMillis = millis();
 
-  ProcessSendMessageAck();
-  if (LastMessageAccepted)
-  {
-    if (millis() - PreviousSerialAvailable > PROCESS_SENDBUFFER_DELAY_MILLIS)
+    if (currentMillis - PreviousMillisProcessFanLevels > PROCESS_REQUESTREGISTER_DELAY_MILLIS)
     {
-      ProcessMessageSendBuffer();
+        ProcessFanLevelRegisters();
     }
-  }
+
+    if ((currentMillis - PreviousMillisProcessLabels >= LABEL_UPDATE_INTERVAL) ||
+        (LabelRegisterIndex > 0 && LastMessageAccepted && IsSendBufferEmpty()))
+    {
+        ProcessLabelRegisters();
+    }
+
+    if (currentMillis - PreviousMillisAckReceived > RESET_ACK_MILLIS)
+    {
+        PreviousMillisAckReceived = currentMillis;
+        LastMessageAccepted = true;
+    }
+
+    ProcessSendMessageAck();
+
+    if (LastMessageAccepted)
+    {
+        if (currentMillis - PreviousSerialAvailable > PROCESS_SENDBUFFER_DELAY_MILLIS)
+        {
+            ProcessMessageSendBuffer();
+        }
+    }
 }

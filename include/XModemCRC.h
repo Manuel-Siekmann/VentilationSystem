@@ -1,10 +1,12 @@
 /*
-  This file is part of the VentilationSystem project.
+  This file is part of the SEVentilation to MQTT project.
   Copyright (C) 2023 Dr. Manuel Siekmann. All rights reserved.
 */
 
 #ifndef XModemCRC_H
 #define XModemCRC_H
+
+#include <Arduino.h>
 
 static const unsigned short XModemCRCLookupTable[256] = {
     0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50a5, 0x60c6, 0x70e7,
@@ -40,14 +42,12 @@ static const unsigned short XModemCRCLookupTable[256] = {
     0xef1f, 0xff3e, 0xcf5d, 0xdf7c, 0xaf9b, 0xbfba, 0x8fd9, 0x9ff8,
     0x6e17, 0x7e36, 0x4e55, 0x5e74, 0x2e93, 0x3eb2, 0x0ed1, 0x1ef0};
 
-unsigned short GetXModemCRC(String message)
+unsigned short GetXModemCRC(const char* buffer, uint length)
 {
-  const char *buffer = message.c_str();
-  uint length = message.length();
   unsigned short crc = 0;
   for (uint i = 0; i < length; i++)
   {
-    unsigned int lookupIndex = ((crc >> 8) ^ *buffer++) & 0x00FF;
+    unsigned int lookupIndex = ((crc >> 8) ^ buffer[i]) & 0x00FF;
     crc = (crc << 8) ^ XModemCRCLookupTable[lookupIndex];
   }
   return crc;
