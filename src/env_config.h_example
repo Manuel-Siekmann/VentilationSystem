@@ -1,0 +1,11 @@
+// Probably a better way to do this would be https://docs.platformio.org/en/latest/scripting/index.html
+// Also, maybe an interface? :D
+
+#define HOSTNAME "your-wanted-wifi-hostname"
+#define WIFI_SSID "my-super-wifi-ssid-name"
+#define WIFI_PASSWORD "wifi-password-here"
+#define MQTT_HOST "nodered" // MQTT broker hostname
+#define MQTT_PORT 1883 // default MQTT port
+
+#define USE_MQTT = true
+#define USE_WEB_UI = false
