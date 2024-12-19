@@ -5,7 +5,11 @@
 
 #include "WebInterface.h"
 #include "Logging.h"
+#ifdef ESP32
+#include <WiFi.h>
+#else
 #include <ESP8266WiFi.h>
+#endif
 
 #define AREA_LEVEL_START 173
 #define AREA_LEVEL_END 178
