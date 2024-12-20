@@ -6,13 +6,9 @@
 #ifdef ESP32
 #include <WiFi.h>
 #define SET_HOSTNAME WiFi.setHostname
-#define PIN_1 GPIO_NUM_4
-#define PIN_2 GPIO_NUM_5
 #else
 #include <ESP8266WiFi.h>
 #define SET_HOSTNAME WiFi.hostname
-#define PIN_1 D1
-#define PIN_2 D2
 #endif
 
 #include "SEController.h"
@@ -30,20 +26,25 @@ void setup()
 {
     Serial.begin(115200);
     SET_HOSTNAME(HOSTNAME);
+    Log("Attempting to connect to WiFi...");
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    delay(500);
+
     while (WiFi.status() != WL_CONNECTED)
     {
         delay(500);
+        Log("Could not connect to WiFi. Status: " + String(WiFi.status()));
         Log("Attempting to connect to WiFi...");
     }
+
     WiFi.setAutoReconnect(true);
     WiFi.persistent(true);
     Log("---- Setup: WiFi connected ----");
-    
-    SEC = new SEController(PIN_1, PIN_2);
-    MQTT = new MqttBridge(MQTT_HOST, MQTT_PORT, SEC);
-    // WebUI = new WebInterface(SEC);
-    // WebUI->begin();
+
+    SEC = new SEController(RX_PIN, TX_PIN);
+    // MQTT = new MqttBridge(MQTT_HOST, MQTT_PORT, SEC);
+    WebUI = new WebInterface(SEC);
+    WebUI->begin();
 }
 
 void checkWiFiConnection() {

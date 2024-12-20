@@ -8,6 +8,8 @@ The connection between the "SEC-Touch Zentralregler" and the ESP8266 is made thr
 
 ![sketch - connection between the esp8266 and sec-touch](/doc/sketch.jpg)
 
+*** Important *** The PC Rx and Tx labels on the SEC-Touch diagram show which ESP32 pin is connected, There is no to connect TX to RX and RX to TX if you just follow the diagram. 
+
 Communication with the PC interface takes place serially at 28800 baud. Further details about the connection can be found in the SEController.cpp class.
 
 An MQTT bridge is currently implemented in the project. This is interchangeable and can be replaced or supplemented with a KNX connection, for example.

@@ -7,5 +7,14 @@
 #define MQTT_HOST "nodered" // MQTT broker hostname
 #define MQTT_PORT 1883 // default MQTT port
 
-#define USE_MQTT = true
-#define USE_WEB_UI = false
+#ifdef ESP32
+#include <WiFi.h>
+#define SET_HOSTNAME WiFi.setHostname
+#define RX_PIN GPIO_NUM_16
+#define TX_PIN GPIO_NUM_17
+#else
+#include <ESP8266WiFi.h>
+#define SET_HOSTNAME WiFi.hostname
+#define RX_PIN D1
+#define TX_PIN D2
+#endif
