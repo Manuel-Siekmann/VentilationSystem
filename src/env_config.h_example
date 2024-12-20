@@ -1,0 +1,20 @@
+// Probably a better way to do this would be https://docs.platformio.org/en/latest/scripting/index.html
+// Also, maybe an interface? :D
+
+#define HOSTNAME "your-wanted-wifi-hostname"
+#define WIFI_SSID "my-super-wifi-ssid-name"
+#define WIFI_PASSWORD "wifi-password-here"
+#define MQTT_HOST "nodered" // MQTT broker hostname
+#define MQTT_PORT 1883 // default MQTT port
+
+#ifdef ESP32
+#include <WiFi.h>
+#define SET_HOSTNAME WiFi.setHostname
+#define RX_PIN GPIO_NUM_16
+#define TX_PIN GPIO_NUM_17
+#else
+#include <ESP8266WiFi.h>
+#define SET_HOSTNAME WiFi.hostname
+#define RX_PIN D1
+#define TX_PIN D2
+#endif

@@ -3,18 +3,20 @@
   Copyright (C) 2023 Dr. Manuel Siekmann. All rights reserved.
 */
 
+#ifdef ESP32
+#include <WiFi.h>
+#define SET_HOSTNAME WiFi.setHostname
+#else
 #include <ESP8266WiFi.h>
+#define SET_HOSTNAME WiFi.hostname
+#endif
+
 #include "SEController.h"
 #include "MqttBridge.h"
 #include "Logging.h"
 #include "WebInterface.h"
+#include "env_config.h" // see env_config.h.example
 
-#define HOSTNAME "HOSTNAME"
-#define WIFI_SSID "WIFI_SSID"
-#define WIFI_PASSWORD "WIFI_PASSWORD"
-
-#define MQTT_HOST "nodered"
-#define MQTT_PORT 1883
 
 SEController *SEC;
 MqttBridge *MQTT;
@@ -23,21 +25,26 @@ MqttBridge *MQTT;
 void setup()
 {
     Serial.begin(115200);
-    WiFi.hostname(HOSTNAME);
+    SET_HOSTNAME(HOSTNAME);
+    Log("Attempting to connect to WiFi...");
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    delay(500);
+
     while (WiFi.status() != WL_CONNECTED)
     {
         delay(500);
+        Log("Could not connect to WiFi. Status: " + String(WiFi.status()));
         Log("Attempting to connect to WiFi...");
     }
+
     WiFi.setAutoReconnect(true);
     WiFi.persistent(true);
     Log("---- Setup: WiFi connected ----");
 
-    SEC = new SEController(D1, D2);
-    MQTT = new MqttBridge(MQTT_HOST, MQTT_PORT, SEC);
-    // WebUI = new WebInterface(SEC);
-    // WebUI->begin();
+    SEC = new SEController(RX_PIN, TX_PIN);
+    // MQTT = new MqttBridge(MQTT_HOST, MQTT_PORT, SEC);
+    WebUI = new WebInterface(SEC);
+    WebUI->begin();
 }
 
 void checkWiFiConnection() {
@@ -56,5 +63,6 @@ void loop()
 {
     checkWiFiConnection();
     SEC->Poll();
-    MQTT->Poll(); // alternative: WebUI->loop();
+    MQTT->Poll(); 
+    // WebUI->loop();
 }
